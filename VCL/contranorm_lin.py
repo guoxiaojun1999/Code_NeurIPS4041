@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
 from torchvision.models import resnet18, resnet34
-from models import ContraNormSimCLR
+from models import SimCLR, ContraNorm
 from tqdm import tqdm
 import argparse
 
@@ -36,38 +36,17 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-class ContraNorm(nn.Module):
-    def __init__(self, scale):
-        super().__init__()
-        self.scale = scale
-    
-    def forward(self, x):
-        if self.scale == 0.:
-            return x
-        x_norm = F.normalize(x, dim=1)
-        sim = x_norm @ x_norm.T
-        sim = nn.functional.softmax(sim, dim=1)
-        x = (1 + self.scale) * x - self.scale * sim @ x
-        return x
-
 class LinModel(nn.Module):
     """Linear wrapper of encoder."""
-    def __init__(self, encoder: nn.Module, projector:nn.Module, feature_dim: int, n_classes: int):
+    def __init__(self, encoder: nn.Module, feature_dim: int, n_classes: int):
         super().__init__()
         self.enc = encoder
         self.feature_dim = feature_dim
         self.n_classes = n_classes
         self.lin = nn.Linear(self.feature_dim, self.n_classes)
-        self.contra_norm = ContraNorm(1)
-        self.projector = projector
-        
+        self.contranorm = ContraNorm(10)
     def forward(self, x):
-        feature = self.enc(x)
-        feature = self.contra_norm(feature)
-        feature = self.contra_norm(feature)
-        feature = self.contra_norm(feature)
-        #projection = self.projector(feature)
-        return self.lin(feature)
+        return self.lin(self.contranorm(self.enc(x)))
 
 
 def run_epoch(model, dataloader, epoch, optimizer=None, scheduler=None):
@@ -127,9 +106,9 @@ def finetune(args):
 
     # Prepare model
     base_encoder = eval(args.backbone)
-    pre_model = ContraNormSimCLR(base_encoder, projection_dim=args.projection_dim).cuda()
+    pre_model = SimCLR(base_encoder, projection_dim=args.projection_dim).cuda()
     pre_model.load_state_dict(torch.load(args.model))
-    model = LinModel(pre_model.enc, pre_model.projector, feature_dim=pre_model.feature_dim, n_classes=len(train_set.targets))
+    model = LinModel(pre_model.enc, feature_dim=pre_model.feature_dim, n_classes=len(train_set.targets))
     model = model.cuda()
 
     # Fix encoder

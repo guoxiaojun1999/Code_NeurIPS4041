@@ -19,7 +19,6 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self, name):
@@ -106,7 +105,7 @@ def train(args):
     # Prepare model
     assert args.backbone in ['resnet18', 'resnet34']
     base_encoder = eval(args.backbone)
-    model = ContraNormSimCLR(base_encoder, projection_dim=args.projection_dim).cuda()
+    model = ContraNormSimCLR(base_encoder, projection_dim=args.projection_dim, scale=0.2).cuda()
     logger.info('Base model: {}'.format(args.backbone))
     logger.info('feature dim: {}, projection dim: {}'.format(model.feature_dim, args.projection_dim))
 
@@ -136,8 +135,8 @@ def train(args):
             x = x.view(sizes[0] * 2, sizes[2], sizes[3], sizes[4]).cuda(non_blocking=True)
 
             optimizer.zero_grad()
-            feature = model(x)
-            loss = align(feature, args.temperature)
+            feature, rep = model(x)
+            loss = align(rep, args.temperature)
             loss.backward()
             optimizer.step()
             scheduler.step()
@@ -148,7 +147,7 @@ def train(args):
         # save checkpoint very log_interval epochs
         if epoch >= args.log_interval and epoch % args.log_interval == 0:
             logger.info("==> Save checkpoint. Train epoch {}, SimCLR loss: {:.4f}".format(epoch, loss_meter.avg))
-            torch.save(model.state_dict(), 'ContraNorm_1_{}_epoch{}.pt'.format(args.backbone, epoch))
+            torch.save(model.state_dict(), 'ContraNorm_{}_epoch{}.pt'.format(args.backbone, epoch))
 
 
 from simclr_config import get_args
